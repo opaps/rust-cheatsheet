@@ -811,79 +811,41 @@ for (const [kind, names] of [
   }
 }
 
-const promiseDomLoaded = new Promise(resolve => {
-  window.addEventListener("DOMContentLoaded", resolve, { once: true });
-});
-
-loadArgs();
-loadContent();
-
-async function loadArgs() {
-  const root = document.documentElement;
-  const args = location.search.slice(1).split(',').filter(arg => !!arg);
-  for (const arg of args) {
-    switch (arg) {
-      case 'dark':
-        document.getElementById('theme').href = 'theme-dark.css';
-        break;
-      case 'large':
-      case 'single':
-        root.classList.add(arg);
-        break;
-      default:
-        console.warn(`Unknown argument ${arg}`);
-    }
-  }
-  await promiseDomLoaded;
-  const footer = document.querySelector('footer');
-  const modeSwitches = footer.querySelectorAll('li > a[href^="?"]');
-  for (const a of modeSwitches) {
-    const mode = a.getAttribute('href').slice(1);
-    if (args.includes(mode)) {
-      a.parentNode.classList.add('on');
-      a.href = '?' + args.filter(arg => arg !== mode).join(',');
-    } else {
-      a.href = '?' + [...args, mode].join(',');
-    }
-  }
-}
-
-async function loadContent() {
-  await promiseDomLoaded;
-  const main = document.querySelector('main');
-  for (const superGroup of data) {
-    const section = $c('section');
-    for (const { mod, type, path, groups } of superGroup) {
-      const h2 = $c('h2');
-      const a = $c('a', type || mod);
-      a.href = `${BASE_URL}${path}`;
-      h2.appendChild(a);
-      section.appendChild(h2);
-      for (const { comment, items } of groups) {
-        section.appendChild($c('h3', comment));
-        const ul = $c('ul');
-        for (const item of items) {
-          ul.appendChild(generateItem(item, path, type ? 'method' : 'fn'));
+function renderContent() {
+  let main = '';
+  for (let superGroup of data) {
+    let section = $c('section');
+    for (let { mod, type, path, groups } of superGroup) {
+      let h2 = $c('h2');
+      let a = $c('a', type || mod, `${BASE_URL}${path}`);
+      h2 += a;
+      section += h2;
+      for (let { comment, items } of groups) {
+        section += $c('h3', comment);
+        let ul = $c('ul');
+        for (let item of items) {
+          ul += generateItem(item, path, type ? 'method' : 'fn');
         }
-        section.appendChild(ul);
+        section += ul;
       }
     }
-    main.appendChild(section);
+    main += section;
   }
+  return main;
 }
 
 function generateItem(item, base, kind) {
-  const li = $c('li');
-  li.appendChild($c('span', 'fn ', 'prefix-fn'));
+  let li = $c('li');
+  li += $c('span', 'fn ', 'prefix-fn');
   // Handle trait
-  const colonsPos = item.indexOf('::');
-  const hasTrait = colonsPos > 0;
-  const trait = hasTrait ? item.slice(0, colonsPos) : null;
+  let colonsPos = item.indexOf('::');
+  let hasTrait = colonsPos > 0;
+  let trait = hasTrait ? item.slice(0, colonsPos) : null;
   item = hasTrait ? item.slice(colonsPos + 2) : item;
   // Handle method name
-  const firstSpace = item.indexOf(' ');
-  const funcName = item.slice(0, firstSpace);
-  const a = $c('a', funcName, kind);
+  let firstSpace = item.indexOf(' ');
+  let funcName = item.slice(0, firstSpace);
+  let a;
   if (kind === 'method') {
     let hash;
     if (trait) {
@@ -891,46 +853,75 @@ function generateItem(item, base, kind) {
     } else {
       hash = `method.${funcName}`;
     }
-    a.href = `${BASE_URL}${base}#${hash}`;
+    a = $c('a', funcName, `${BASE_URL}${base}#${hash}`);
   } else if (kind === 'fn') {
-    a.href = `${BASE_URL}${base}fn.${funcName}.html`;
+    a = $c('a', funcName, `${BASE_URL}${base}fn.${funcName}.html`);
   }
-  li.appendChild(a);
+  li += a;
   // Format the rest
-  const pieces = item.slice(firstSpace).split(/([^\w&()]+|[&()])/);
-  const levels = [li];
-  for (const piece of pieces) {
+  let pieces = item.slice(firstSpace).split(/([^\w&()]+|[&()])/);
+  let levels = [li];
+  for (let piece of pieces) {
     if (piece === ')') {
-      const nested = levels.shift();
-      levels[0].appendChild(nested);
+      let nested = levels.shift();
+      levels[0] += nested;
     }
-    const info = words.get(piece);
+    let info = words.get(piece);
     if (info) {
-      const { kind, path } = info;
-      const element = $c(path ? 'a' : 'span', piece, kind);
+      let { kind, path } = info;
+      let element;
       if (path) {
-        element.href = BASE_URL + path;
+        element = $c('a', piece, BASE_URL + path);
+      } else {
+        element = $c('span', piece);
       }
-      levels[0].appendChild(element);
+      levels[0] += element;
     } else {
-      levels[0].appendChild(document.createTextNode(piece));
+      levels[0] += piece;
     }
     if (piece === '(') {
-      const nested = $c('span', undefined, 'nested');
+      let nested = $c('span', undefined, 'nested');
       levels.unshift(nested);
     }
   }
-  li.normalize();
-  return li;
+  li = levels[0].replace(/\n/g, '');
+  return li + '\n';
 }
 
-function $c(tag, text, className) {
-  const element = document.createElement(tag);
-  if (text) {
-    element.textContent = text;
+function $c(tag, text, rst) {
+  let r = '';
+  if (!text) return r;
+
+  switch (tag) {
+    case 'section':
+      r = '# ';
+      break;
+    case 'h2':
+      r = '## ';
+      break;
+    case 'h3':
+      r = '## ';
+      break;
+    case 'ul':
+      r = '*';
+      break;
+    case 'li':
+      r = '*';
+      break;
+    case 'a':
+      r = '[' + text + ']('+ rst + ')';
+      return r + '\n';
+    case 'span':
+      return text + ' ';
+    default:
+      break;
   }
-  if (className) {
-    element.className = className;
-  }
-  return element;
+
+  return r + text + '\n';
 }
+
+const fs = require('fs');
+
+fs.writeFile('./generated.md', renderContent(), (err) => {
+  console.error(err);
+})
